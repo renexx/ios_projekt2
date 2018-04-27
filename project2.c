@@ -16,9 +16,63 @@
 #include <signal.h>
 #include<string.h>
 #include <errno.h>
+#include<limits.h>
 
+#define MMAP(poiner)
+{
+    (pointer) = mmap(NULL, sizeof(*(pointer)), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+}
+#define mysleep(max_time)
+{
+    if (max_time != 0) sleep(rand() % max_time);
+}
+#define UNMAP(pointer) {munmap((pointer), sizeof((pointer)));}
 
+int *share_variable = NULL;
+sem_t *semaphore1 = NULL;
+FILE *pfile;
 
+int load()
+{
+    pfile = fopen("proj2.out", "w");
+    MMAP(share_variable);
+    if((semaphore1 = sem_open("/xbolfr00", O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
+        return -1;
+    return 0;
+}
+
+void close_semaphores()
+{
+    UNMAP(share_variable);
+    sem_close(semaphore1);
+    //odalokovanie miesta semaphora
+    sem_unlink("/xbolfr00");
+}
+void process_riders()
+{
+    exit(0);
+}
+void process_bus(int delay, int cap)
+{
+    while(true)
+    {
+
+    }
+    exit(0);
+}
+void gen_riders(int riders, int delay)
+{
+    for(int i; i <= riders; i++)
+    {
+        pid_t riders_id = fork();
+        if (riders_id == 0)
+        {
+            process_rider(riders);
+        }
+    mysleep(delay);
+    }
+    exit(0);
+}
 int params(int *riders, int *capacity, int *art, int *abt, char **argv)
 {
     *riders = atoi(argv[1]);
@@ -50,6 +104,33 @@ int main (int argc, char *argv[])
     int var = params(&riders, &capacity, &art, &abt, argv);
     if (var == 1)
         return 1;
+    if(load() == -1)
+    {
+        close_semaphores;
+        return -1;
+    }
+    else
+    {
 
+    }
+    pid_t bus = fork();
+    if (bus == 0)
+    {
+        //child
+        process_bus(delay, cap);
+
+    }
+    else
+    {
+        //parent
+        pid_t riders_generator = fork();
+        if (riders_generator == 0)
+        {
+            gen_riders();
+        }
+        gen_riders();
+    }
+    close_semaphores();
+    exit(0);
     return 0;
 }
