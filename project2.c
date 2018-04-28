@@ -24,20 +24,18 @@
 #define ERROR (-1)
 #define CHYBA2 (2)
 /*share variable*/
-int *A;
-int *CR;
-int *MAX_IN_BUS;
-int *HOW_GET_IN;
-int *ALL_FLAG;
-int *IN_TIME;
-
-int shm_a;
-int shm_cr;
-int shm_maxinbus;
-int shm_howgetin;
-int shm_allflag;
-int shm_intime;
-
+int *A = NULL;
+int id_A = 0;
+int *CR = NULL;
+int id_CR = 0;
+int *MAX_IN_BUS = NULL;
+int id_MAX_IN_BUS = 0;
+int *ALL_FLAG = NULL;
+int id_ALL_FLAG = 0;
+int *HOW_GET_IN = NULL;
+int id_HOW_GET_IN = 0;
+int *IN_TIME = NULL;
+int id_IN_TIME = 0;
 
 /*semaphores*/
 sem_t *bus = NULL;
@@ -48,10 +46,8 @@ sem_t *write_line = NULL;
 
 FILE *pfile;
 
-void close_semaphores()
+void clean()
 {
-    //UNMAP(share_variable);
-
     sem_close(bus);
     sem_close(riders_allonaboard);
     sem_close(riders_ended);
@@ -63,31 +59,12 @@ void close_semaphores()
     sem_unlink("/xbolfr00riders_ended");
     sem_unlink("/xbolfr00semaphore1");
     sem_unlink("/xbolfr00write_line");
-}
-void clean()
-{
-    close_semaphores();
-    fclose(pfile);
-
-    munmap(A, sizeof(int));
-    munmap(CR, sizeof(int));
-    munmap(MAX_IN_BUS, sizeof(int));
-    munmap(HOW_GET_IN, sizeof(int));
-    munmap(ALL_FLAG, sizeof(int));
-    munmap(IN_TIME, sizeof(int));
-
-    shm_unlink("/xbolfr00a");
-    close(shm_a);
-    shm_unlink("/xbolfr00cr");
-    close(shm_cr);
-    shm_unlink("/xbolfr00xbolfr00maxinbus");
-    close(shm_maxinbus);
-    shm_unlink("/xbolfr00xbolfr00howgetin");
-    close(shm_howgetin);
-    shm_unlink("/xbolfr00xbolfr00allflag");
-    close(shm_allflag);
-    shm_unlink("/xbolfr00xbolfr00intime");
-    close(shm_intime);
+    shmctl(id_A, IPC_RMID, NULL);
+	shmctl(id_CR, IPC_RMID, NULL);
+	shmctl(id_MAX_IN_BUS, IPC_RMID, NULL);
+	shmctl(id_ALL_FLAG, IPC_RMID, NULL);
+	shmctl(id_HOW_GET_IN, IPC_RMID, NULL);
+    shmctl(id_IN_TIME, IPC_RMID, NULL);
 }
 int load()
 {
@@ -98,47 +75,117 @@ int load()
     }
     setbuf(pfile,NULL);
 
-    if ((bus = sem_open("/xbolfr00bus", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
-        return -1;
-    if ((riders_allonaboard = sem_open("/xbolfr00riders_allonaboard", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
-        return -1;
-    if ((riders_ended = sem_open("/xbolfr00riders_ended", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
-        return -1;
-    if ((semaphore1 = sem_open("/xbolfr00semaphore1", O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
-        return -1;
-    if ((write_line = sem_open("/xbolfr00write_line", O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
-        return -1;
-
-    shm_a = shm_open("/xbolfr00a", O_CREAT | O_EXCL | O_RDWR, 0666);
-    shm_cr = shm_open("/xbolfr00cr", O_CREAT | O_EXCL | O_RDWR, 0666);
-    shm_maxinbus = shm_open("/xbolfr00maxinbus", O_CREAT | O_EXCL | O_RDWR, 0666);
-    shm_howgetin = shm_open("/xbolfr00howgetin", O_CREAT | O_EXCL | O_RDWR, 0666);
-    shm_allflag = shm_open("/xbolfr00allflag", O_CREAT | O_EXCL | O_RDWR, 0666);
-    shm_intime = shm_open("/xbolfr00intime", O_CREAT | O_EXCL | O_RDWR, 0666);
-    if(shm_a == ERROR || shm_cr == ERROR || shm_maxinbus == ERROR || shm_howgetin == ERROR || shm_allflag == ERROR || shm_intime == ERROR)
+    if ((id_A = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666)) == -1)
     {
-        fprintf(stderr,"Cannot load source\n");
+        fprintf(stderr, "Cannot load source\n");
         clean();
-        exit(0);
+        return -1;
     }
-    ftruncate(shm_a, sizeof(int));
-    ftruncate(shm_cr, sizeof(int));
-    ftruncate(shm_maxinbus, sizeof(int));
-    ftruncate(shm_howgetin, sizeof(int));
-    ftruncate(shm_allflag, sizeof(int));
-    ftruncate(shm_intime, sizeof(int));
 
-    A = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED, shm_a, 0);
-    CR = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED, shm_cr, 0);
-    MAX_IN_BUS = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED, shm_maxinbus, 0);
-    HOW_GET_IN = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED, shm_howgetin, 0);
-    ALL_FLAG = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED, shm_allflag, 0);
-    IN_TIME = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED, shm_intime, 0);
-    if(A == MAP_FAILED || CR == MAP_FAILED || MAX_IN_BUS == MAP_FAILED || HOW_GET_IN == MAP_FAILED || ALL_FLAG == MAP_FAILED || IN_TIME == MAP_FAILED)
+    if ((A = shmat(id_A, NULL, 0)) == NULL)
     {
-        fprintf(stderr,"Cannot load source!\n");
+        fprintf(stderr, "Cannot load source\n");
         clean();
-        exit(0);
+        return -1;
+    }
+
+    if ((id_CR = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666)) == -1)
+    {
+        fprintf(stderr, "Cannot load source\n");
+        clean();
+        return -1;
+    }
+    if ((CR = shmat(id_CR, NULL, 0)) == NULL)
+    {
+        fprintf(stderr, "Cannot load source\n");
+        clean();
+        return -1;
+    }
+    if ((id_MAX_IN_BUS = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666)) == -1)
+    {
+        fprintf(stderr, "Cannot load source\n");
+        clean();
+        return -1;
+    }
+    if ((MAX_IN_BUS = shmat(id_MAX_IN_BUS, NULL, 0)) == NULL)
+    {
+        fprintf(stderr, "Cannot load source\n");
+        clean();
+        return -1;
+    }
+    if ((id_ALL_FLAG = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666)) == -1)
+    {
+        fprintf(stderr, "Cannot load source\n");
+        clean();
+        return -1;
+    }
+    if ((ALL_FLAG = shmat(id_ALL_FLAG, NULL, 0)) == NULL)
+    {
+        fprintf(stderr, "Cannot load source\n");
+        clean();
+        return -1;
+    }
+    if ((id_HOW_GET_IN = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666)) == -1)
+    {
+        fprintf(stderr, "Cannot load source\n");
+        clean();
+        return -1;
+    }
+    if ((HOW_GET_IN = shmat(id_HOW_GET_IN, NULL, 0)) == NULL)
+    {
+        fprintf(stderr, "Cannot load source\n");
+        clean();
+        return -1;
+    }
+    if ((id_IN_TIME = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666)) == -1)
+    {
+        fprintf(stderr, "Cannot load source\n");
+        clean();
+        return -1;
+    }
+    if ((IN_TIME = shmat(id_IN_TIME, NULL, 0)) == NULL)
+    {
+        fprintf(stderr, "Cannot load source\n");
+        clean();
+        return -1;
+    }
+
+        *A = 1;
+        *CR = 0;
+        *MAX_IN_BUS = 0;
+        *ALL_FLAG = 0;
+        *HOW_GET_IN = 0;
+        *IN_TIME = 0;
+
+    if ((bus = sem_open("/xbolfr00bus", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
+    {
+        fprintf(stderr, "Cannot load semaphore\n");
+        clean();
+        return -1;
+    }
+    if ((riders_allonaboard = sem_open("/xbolfr00riders_allonaboard", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
+    {
+        fprintf(stderr, "Cannot load semaphore\n");
+        clean();
+        return -1;
+    }
+    if ((riders_ended = sem_open("/xbolfr00riders_ended", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
+    {
+        fprintf(stderr, "Cannot load semaphore\n");
+        clean();
+        return -1;
+    }
+    if ((semaphore1 = sem_open("/xbolfr00semaphore1", O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
+    {
+        fprintf(stderr, "Cannot load semaphore\n");
+        clean();
+        return -1;
+    }
+    if ((write_line = sem_open("/xbolfr00write_line", O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
+    {
+        fprintf(stderr, "Cannot load semaphore\n");
+        clean();
+        return -1;
     }
     return 0;
 }
@@ -205,7 +252,7 @@ void process_bus(int *R, int *C, int *ABT)
         }
     sem_wait(write_line);
     (*A)++;
-    fprintf(pfile, "%d\t\t: BUS\t\t: depart:\n",*A);
+    fprintf(pfile, "%d\t\t: BUS\t\t: depart\n",*A);
     sem_post(write_line);
     sem_post(semaphore1);
     usleep(rand()%(1000*(*ABT)+1));
@@ -225,7 +272,7 @@ void process_bus(int *R, int *C, int *ABT)
 void gen_riders(int *R, int C, int *ART)
 {
     pid_t R_id[*R];
-    for(int i; i <= *R; i++)
+    for(int i = 1; i <= *R+1; i++)
     {
         usleep(rand()%(1000*(*ART)+1));
         R_id[i] = fork();
@@ -273,7 +320,7 @@ int main (int argc, char *argv[])
         return 1;
     if(load() == -1)
     {
-        close_semaphores();
+        clean();
         return -1;
     }
     else
@@ -315,7 +362,6 @@ int main (int argc, char *argv[])
     if(p_bus < 0)
         return -1;
     clean();
-    close_semaphores();
     fclose(pfile);
     return 0;
 }

@@ -6,3 +6,4 @@ run:
 
 clean:
 	rm -rf project2
+	rm -rf proj2.out
