@@ -21,15 +21,8 @@
 #include <sys/shm.h>
 #include <signal.h>
 #include <sys/mman.h>
-
-#define MMAP(pointer){
-    (pointer) = mmap(NULL, sizeof(*(pointer)), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-}
-#define mysleep(max_time)
-{
-    if (max_time != 0) sleep(rand() % max_time);
-}
-#define UNMAP(pointer) {munmap((pointer), sizeof((pointer)));}
+#define ERROR (-1)
+#define CHYBA2 (2)
 /*share variable*/
 int *A;
 int *CR;
@@ -42,7 +35,7 @@ int shm_a;
 int shm_cr;
 int shm_maxinbus;
 int shm_howgetin;
-int shm_allflag
+int shm_allflag;
 int shm_intime;
 
 
@@ -51,10 +44,51 @@ sem_t *bus = NULL;
 sem_t *riders_allonaboard = NULL;
 sem_t *riders_ended = NULL;
 sem_t *semaphore1 = NULL;
-sem_t *write = NULL;
+sem_t *write_line = NULL;
 
 FILE *pfile;
 
+void close_semaphores()
+{
+    //UNMAP(share_variable);
+
+    sem_close(bus);
+    sem_close(riders_allonaboard);
+    sem_close(riders_ended);
+    sem_close(semaphore1);
+    sem_close(write_line);
+    //odalokovanie miesta semaphora
+    sem_unlink("/xbolfr00bus");
+    sem_unlink("/xbolfr00riders_allonaboard");
+    sem_unlink("/xbolfr00riders_ended");
+    sem_unlink("/xbolfr00semaphore1");
+    sem_unlink("/xbolfr00write_line");
+}
+void clean()
+{
+    close_semaphores();
+    fclose(pfile);
+
+    munmap(A, sizeof(int));
+    munmap(CR, sizeof(int));
+    munmap(MAX_IN_BUS, sizeof(int));
+    munmap(HOW_GET_IN, sizeof(int));
+    munmap(ALL_FLAG, sizeof(int));
+    munmap(IN_TIME, sizeof(int));
+
+    shm_unlink("/xbolfr00a");
+    close(shm_a);
+    shm_unlink("/xbolfr00cr");
+    close(shm_cr);
+    shm_unlink("/xbolfr00xbolfr00maxinbus");
+    close(shm_maxinbus);
+    shm_unlink("/xbolfr00xbolfr00howgetin");
+    close(shm_howgetin);
+    shm_unlink("/xbolfr00xbolfr00allflag");
+    close(shm_allflag);
+    shm_unlink("/xbolfr00xbolfr00intime");
+    close(shm_intime);
+}
 int load()
 {
     pfile = fopen("proj2.out", "w");
@@ -63,16 +97,16 @@ int load()
 		return 1;
     }
     setbuf(pfile,NULL);
-}
-    if((bus = sem_open("/xbolfr00bus", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
+
+    if ((bus = sem_open("/xbolfr00bus", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
         return -1;
-    if((riders_allonaboard = sem_open("/xbolfr00riders_allonaboard", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
+    if ((riders_allonaboard = sem_open("/xbolfr00riders_allonaboard", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
         return -1;
-    if((riders_ended = sem_open("/xbolfr00riders_ended", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
+    if ((riders_ended = sem_open("/xbolfr00riders_ended", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
         return -1;
-    if((bus = sem_open("/xbolfr00semaphore1", O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
+    if ((semaphore1 = sem_open("/xbolfr00semaphore1", O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
         return -1;
-    if((write = sem_open("/xbolfr00write", O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
+    if ((write_line = sem_open("/xbolfr00write_line", O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
         return -1;
 
     shm_a = shm_open("/xbolfr00a", O_CREAT | O_EXCL | O_RDWR, 0666);
@@ -106,70 +140,30 @@ int load()
         clean();
         exit(0);
     }
+    return 0;
 }
 
-void close_semaphores()
+void process_riders(int C,int i)
 {
-    //UNMAP(share_variable);
-
-    sem_close(bus);
-    sem_close(riders_allonaboard);
-    sem_close(riders_ended);
-    sem_close(semaphore1);
-    sem_close(write);
-    //odalokovanie miesta semaphora
-    sem_unlink("/xbolfr00bus");
-    sem_unlink("/xbolfr00riders_allonaboard");
-    sem_unlink("/xbolfr00riders_ended");
-    sem_unlink("/xbolfr00semaphore1");
-    sem_unlink("/xbolfr00write");
-}
-void clean()
-{
-    close_semaphores();
-    fclose(pfile);
-
-    munmap(A, sizeof(int));
-    munmap(CR, sizeof(int));
-    munmap(MAX_IN_BUS, sizeof(int));
-    munmap(HOW_GET_IN, sizeof(int));
-    munmap(ALL_FLAG, sizeof(int));
-    munmap(IN_TIME, sizeof(int));
-
-    shm_unlink("/xbolfr00a");
-    close(shm_a);
-    shm_unlink("/xbolfr00cr");
-    close(shm_cr);
-    shm_unlink("/xbolfr00xbolfr00maxinbus");
-    close(shm_maxinbus);
-    shm_unlink("/xbolfr00xbolfr00howgetin");
-    close(shm_howgetin);
-    shm_unlink("/xbolfr00xbolfr00allflag");
-    close(shm_allflag);
-    shm_unlink("/xbolfr00xbolfr00intime");
-    close(shm_intime);
-}
-void process_riders(int *C,int i)
-{
-    sem_wait(write);
+    sem_wait(write_line);
     (*A)++;
     fprintf(pfile, "%d\t\t: RID %d\t\t: start\n",*A,i);
-    sem_post(write);
+    sem_post(write_line);
     sem_wait(semaphore1);
     (*IN_TIME)++;
     (*A)++;
-    sem_wait(w);
+    sem_wait(write_line);
     (*CR)++;
     fprintf(pfile, "%d\t\t: RID %d\t\t: enter: %d\n",*A,i,*IN_TIME);
-    sem_post(write);
+    sem_post(write_line);
     sem_post(semaphore1);
     sem_wait(bus);
     *IN_TIME=0;
     (*HOW_GET_IN)++;
-    sem_wait(write);
+    sem_wait(write_line);
     (*A)++;
     fprintf(pfile, "%d\t\t: RID %d\t\t: boarding\n",*A,i);
-    sem_post(write);
+    sem_post(write_line);
     (*CR)--;
     if(*CR == 0 || *HOW_GET_IN == C)
     {
@@ -178,67 +172,68 @@ void process_riders(int *C,int i)
     else
         sem_post(bus);
     sem_wait(riders_ended);
-    sem_wait(write);
+    sem_wait(write_line);
     (*A)++;
     fprintf(pfile,"%d\t\t: RID %d\t\t: finish\n", *A,i);
-    sem_post(write);
+    sem_post(write_line);
     exit(0);
 }
-void process_bus(int *C, int *ABT)
+void process_bus(int *R, int *C, int *ABT)
 {
-    sem_wait(write);
+    sem_wait(write_line);
     fprintf(pfile, "%d\t\t: BUS\t\t: start\n",*A);
-    sem_post(write);
-    while(*MAX_IN_BUS <= R && *ALL_FLAG != 1){
+    sem_post(write_line);
+    while(*MAX_IN_BUS <= *R && *ALL_FLAG != 1){
         sem_wait(semaphore1);
-        sem_wait(write);
+        sem_wait(write_line);
         (*A)++;
         fprintf(pfile, "%d\t\t: BUS\t\t: arrival\n",*A);
-        sem_post(write);
+        sem_post(write_line);
         if(*CR > 0)
         {
-            sem_wait(write);
+            sem_wait(write_line);
             (*A)++;
-            fprintf(pfile, "%d\t\t: BUS\t\t: start boarding: %lu\n",*A,(*CR > C ? C : *CR));
+            fprintf(pfile, "%d\t\t: BUS\t\t: start boarding: %d\n",*A,(*CR > *C ? *C : *CR));
             *HOW_GET_IN = 0;
             sem_post(bus);
             sem_wait(riders_allonaboard);
             *MAX_IN_BUS += *HOW_GET_IN;
-            sem_wait(write);
+            sem_wait(write_line);
             (*A)++;
             fprintf(pfile, "%d\t\t: BUS\t\t: end boarding: 0\n",*A);
-            sem_post(write);
+            sem_post(write_line);
         }
-    sem_wait(write);
+    sem_wait(write_line);
     (*A)++;
     fprintf(pfile, "%d\t\t: BUS\t\t: depart:\n",*A);
-    sem_post(write);
+    sem_post(write_line);
     sem_post(semaphore1);
-    usleep(rand()%(1000*ABT+1));
-    sem_wait(write);
+    usleep(rand()%(1000*(*ABT)+1));
+    sem_wait(write_line);
     (*A)++;
     fprintf(pfile, "%d\t\t: BUS\t\t: end\n",*A);
-    sem_post(write);
+    sem_post(write_line);
     for(int i = 0; i < *HOW_GET_IN; i++)
         sem_post(riders_ended);
     }
-    sem_wait(write);
+    sem_wait(write_line);
     (*A)++;
     fprintf(pfile, "%d\t\t: BUS\t\t: finish\n",*A);
-    sem_post(w);
+    sem_post(write_line);
     exit(0);
 }
-void gen_riders(int *R, int *C, int *ART)
+void gen_riders(int *R, int C, int *ART)
 {
-    for(int i; i <= R; i++)
+    pid_t R_id[*R];
+    for(int i; i <= *R; i++)
     {
-        usleep(rand()%(1000*ART+1));
-        pid_t R_id[i] = fork();
+        usleep(rand()%(1000*(*ART)+1));
+        R_id[i] = fork();
         if (R_id[i] == 0)
         {
-            process_rider(&C,i);
+            process_riders(C,i);
         }
-        if (R_id < 0)
+        if (R_id[i] < 0)
         {
             kill(-1*getpid(),SIGTERM);
         }
@@ -289,7 +284,7 @@ int main (int argc, char *argv[])
     if (p_bus == 0)
     {
         //child
-        process_bus(&C,&ABT);
+        process_bus(&R,&C,&ABT);
 
     }
     else //p_bus > 0
@@ -299,12 +294,14 @@ int main (int argc, char *argv[])
         if (riders_generator == 0)
         {
             //child
-            gen_riders(&R,&C,&ART);
-            while((waitpid == wait(0)) > 0);
+            pid_t waitpid;
+
+            gen_riders(&R,C,&ART);
+            while((waitpid = wait(0)) > 0);
             *ALL_FLAG=1;
             exit(0);
         }
-        else if
+        else if(riders_generator > 0)
         {
             //parent
             waitpid(riders_generator,NULL,0);
@@ -315,7 +312,7 @@ int main (int argc, char *argv[])
             kill(-1*getpid(),SIGTERM);
         }
     }
-    if(bus < 0)
+    if(p_bus < 0)
         return -1;
     clean();
     close_semaphores();
