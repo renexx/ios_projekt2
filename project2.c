@@ -149,8 +149,39 @@ void clean()
     shm_unlink("/xbolfr00xbolfr00intime");
     close(shm_intime);
 }
-void process_riders()
+void process_riders(int *C,int i)
 {
+    sem_wait(write);
+    (*A)++;
+    fprintf(pfile, "%d\t\t: RID %d\t\t: start\n",*A,i);
+    sem_post(write);
+    sem_wait(semaphore1);
+    (*IN_TIME)++;
+    (*A)++;
+    sem_wait(w);
+    (*CR)++;
+    fprintf(pfile, "%d\t\t: RID %d\t\t: enter: %d\n",*A,i,*IN_TIME);
+    sem_post(write);
+    sem_post(semaphore1);
+    sem_wait(bus);
+    *IN_TIME=0;
+    (*HOW_GET_IN)++;
+    sem_wait(write);
+    (*A)++;
+    fprintf(pfile, "%d\t\t: RID %d\t\t: boarding\n",*A,i);
+    sem_post(write);
+    (*CR)--;
+    if(*CR == 0 || *HOW_GET_IN == C)
+    {
+        sem_post(riders_allonaboard);
+    }
+    else
+        sem_post(bus);
+    sem_wait(riders_ended);
+    sem_wait(write);
+    (*A)++;
+    fprintf(pfile,"%d\t\t: RID %d\t\t: finish\n", *A,i);
+    sem_post(write);
     exit(0);
 }
 void process_bus(int *C, int *ABT)
@@ -197,16 +228,20 @@ void process_bus(int *C, int *ABT)
     sem_post(w);
     exit(0);
 }
-void gen_riders(int R, int delay)
+void gen_riders(int *R, int *C, int *ART)
 {
     for(int i; i <= R; i++)
     {
-        pid_t R_id = fork();
-        if (R_id == 0)
+        usleep(rand()%(1000*ART+1));
+        pid_t R_id[i] = fork();
+        if (R_id[i] == 0)
         {
-            process_rider(R);
+            process_rider(&C,i);
         }
-    mysleep(delay);
+        if (R_id < 0)
+        {
+            kill(-1*getpid(),SIGTERM);
+        }
     }
     exit(0);
 }
@@ -264,17 +299,26 @@ int main (int argc, char *argv[])
         if (riders_generator == 0)
         {
             //child
-            gen_riders();
+            gen_riders(&R,&C,&ART);
+            while((waitpid == wait(0)) > 0);
+            *ALL_FLAG=1;
+            exit(0);
         }
-        else
+        else if
         {
             //parent
             waitpid(riders_generator,NULL,0);
             waitpid(p_bus,NULL,0);
         }
-        gen_riders();
+        else
+        {
+            kill(-1*getpid(),SIGTERM);
+        }
     }
+    if(bus < 0)
+        return -1;
+    clean();
     close_semaphores();
-    exit(0);
+    fclose(pfile);
     return 0;
 }
