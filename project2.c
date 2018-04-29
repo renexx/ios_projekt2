@@ -22,7 +22,8 @@
 #include <sys/shm.h>
 #include <signal.h>
 #include <sys/mman.h>
-
+#define SHMAT_ERROR (void*)-1
+#define SHM_SIZE sizeof(int)
 /*share variable*/
 int *A = NULL;
 int id_A = 0;
@@ -42,23 +43,33 @@ sem_t *bus = NULL;
 sem_t *riders_allonaboard = NULL;
 sem_t *riders_ended = NULL;
 sem_t *semaphore1 = NULL;
-sem_t *write_line = NULL;
 FILE *pfile;
 
-
-void clean()
+void close_semaphores()
 {
     sem_close(bus);
     sem_close(riders_allonaboard);
     sem_close(riders_ended);
     sem_close(semaphore1);
-    sem_close(write_line);
+
     //odalokovanie miesta semaphora
     sem_unlink("/xbolfr00bus");
     sem_unlink("/xbolfr00riders_allonaboard");
     sem_unlink("/xbolfr00riders_ended");
     sem_unlink("/xbolfr00semaphore1");
-    sem_unlink("/xbolfr00write_line");
+}
+void clean()
+{
+
+    close_semaphores();
+
+    shmdt(A);
+    shmdt(CR);
+    shmdt(MAX_IN_BUS);
+    shmdt(ALL_FLAG);
+    shmdt(HOW_GET_IN);
+    shmdt(IN_TIME);
+
     shmctl(id_A, IPC_RMID, NULL);
     shmctl(id_CR, IPC_RMID, NULL);
     shmctl(id_MAX_IN_BUS, IPC_RMID, NULL);
@@ -69,86 +80,56 @@ void clean()
 
 int load()
 {
-    if ((id_A = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666)) == -1)
+    id_A = shmget(IPC_PRIVATE, SHM_SIZE, IPC_CREAT | 0666);
+    id_CR = shmget(IPC_PRIVATE, SHM_SIZE, IPC_CREAT | 0666);
+    id_MAX_IN_BUS = shmget(IPC_PRIVATE, SHM_SIZE, IPC_CREAT | 0666);
+    id_ALL_FLAG = shmget(IPC_PRIVATE, SHM_SIZE, IPC_CREAT | 0666);
+    id_HOW_GET_IN = shmget(IPC_PRIVATE, SHM_SIZE, IPC_CREAT | 0666);
+    id_IN_TIME = shmget(IPC_PRIVATE, SHM_SIZE, IPC_CREAT | 0666);
+    if(id_A == -1 || id_CR == -1 || id_MAX_IN_BUS == -1 || id_ALL_FLAG == -1 || id_HOW_GET_IN == -1 || id_IN_TIME == -1)
     {
-        fprintf(stderr, "Cannot load source\n");
+        fprintf(stderr, "Cannot allocate shm!\n");
         clean();
         return -1;
     }
 
-    if ((A = shmat(id_A, NULL, 0)) == NULL)
+    A = shmat(id_A, NULL, 0);
+    CR = shmat(id_CR, NULL, 0);
+    MAX_IN_BUS = shmat(id_MAX_IN_BUS, NULL, 0);
+    ALL_FLAG = shmat(id_ALL_FLAG, NULL, 0);
+    HOW_GET_IN = shmat(id_HOW_GET_IN, NULL, 0);
+    IN_TIME = shmat(id_IN_TIME, NULL, 0);
+    if(A == SHMAT_ERROR || CR == SHMAT_ERROR || MAX_IN_BUS == SHMAT_ERROR || ALL_FLAG == SHMAT_ERROR || HOW_GET_IN == SHMAT_ERROR || IN_TIME == SHMAT_ERROR)
     {
-        fprintf(stderr, "Cannot load source\n");
+        fprintf(stderr, "Cannot load shm\n");
         clean();
         return -1;
     }
 
-    if ((id_CR = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666)) == -1)
+    if ((bus = sem_open("/xbolfr00bus", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
     {
-        fprintf(stderr, "Cannot load source\n");
+        fprintf(stderr, "Cannot load semaphore bus\n");
         clean();
         return -1;
     }
 
-    if ((CR = shmat(id_CR, NULL, 0)) == NULL)
+    if ((riders_allonaboard = sem_open("/xbolfr00riders_allonaboard", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
     {
-        fprintf(stderr, "Cannot load source\n");
+        fprintf(stderr, "Cannot load semaphore riders_allonaboard\n");
         clean();
         return -1;
     }
 
-    if ((id_MAX_IN_BUS = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666)) == -1)
+    if ((riders_ended = sem_open("/xbolfr00riders_ended", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
     {
-        fprintf(stderr, "Cannot load source\n");
+        fprintf(stderr, "Cannot load semaphore riders_ended\n");
         clean();
         return -1;
     }
 
-    if ((MAX_IN_BUS = shmat(id_MAX_IN_BUS, NULL, 0)) == NULL)
+    if ((semaphore1 = sem_open("/xbolfr00semaphore1", O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
     {
-        fprintf(stderr, "Cannot load source\n");
-        clean();
-        return -1;
-    }
-
-    if ((id_ALL_FLAG = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666)) == -1)
-    {
-        fprintf(stderr, "Cannot load source\n");
-        clean();
-        return -1;
-    }
-
-    if ((ALL_FLAG = shmat(id_ALL_FLAG, NULL, 0)) == NULL)
-    {
-        fprintf(stderr, "Cannot load source\n");
-        clean();
-        return -1;
-    }
-
-    if ((id_HOW_GET_IN = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666)) == -1)
-    {
-        fprintf(stderr, "Cannot load source\n");
-        clean();
-        return -1;
-    }
-
-    if ((HOW_GET_IN = shmat(id_HOW_GET_IN, NULL, 0)) == NULL)
-    {
-        fprintf(stderr, "Cannot load source\n");
-        clean();
-        return -1;
-    }
-
-    if ((id_IN_TIME = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666)) == -1)
-    {
-        fprintf(stderr, "Cannot load source\n");
-        clean();
-        return -1;
-    }
-
-    if ((IN_TIME = shmat(id_IN_TIME, NULL, 0)) == NULL)
-    {
-        fprintf(stderr, "Cannot load source\n");
+        fprintf(stderr, "Cannot load semaphore1\n");
         clean();
         return -1;
     }
@@ -159,136 +140,92 @@ int load()
     *ALL_FLAG = 0;
     *HOW_GET_IN = 0;
     *IN_TIME = 0;
-
-    if ((bus = sem_open("/xbolfr00bus", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
-    {
-        fprintf(stderr, "Cannot load semaphore\n");
-        clean();
-        return -1;
-    }
-
-    if ((riders_allonaboard = sem_open("/xbolfr00riders_allonaboard", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
-    {
-        fprintf(stderr, "Cannot load semaphore\n");
-        clean();
-        return -1;
-    }
-
-    if ((riders_ended = sem_open("/xbolfr00riders_ended", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
-    {
-        fprintf(stderr, "Cannot load semaphore\n");
-        clean();
-        return -1;
-    }
-
-    if ((semaphore1 = sem_open("/xbolfr00semaphore1", O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
-    {
-        fprintf(stderr, "Cannot load semaphore\n");
-        clean();
-        return -1;
-    }
-
-    if ((write_line = sem_open("/xbolfr00write_line", O_CREAT | O_EXCL, 0666, 1)) == SEM_FAILED)
-    {
-        fprintf(stderr, "Cannot load semaphore\n");
-        clean();
-        return -1;
-    }
-
     return 0;
 }
 
 void process_riders(int C, int i)
 {
-    sem_wait(write_line);
     (*A)++;
     fprintf(pfile, "%d\t\t: RID %d\t\t: start\n",*A,i);
-    sem_post(write_line);
 
     sem_wait(semaphore1);
 
     (*IN_TIME)++;
     (*A)++;
-    sem_wait(write_line);
     (*CR)++;
     fprintf(pfile, "%d\t\t: RID %d\t\t: enter: %d\n",*A,i,*IN_TIME);
-    sem_post(write_line);
 
     sem_post(semaphore1);
     sem_wait(bus);
 
     *IN_TIME=0;
     (*HOW_GET_IN)++;
-    sem_wait(write_line);
     (*A)++;
     fprintf(pfile, "%d\t\t: RID %d\t\t: boarding\n",*A,i);
-    sem_post(write_line);
     (*CR)--;
     if(*CR == 0 || *HOW_GET_IN == C)
         sem_post(riders_allonaboard);
     else
         sem_post(bus);
     sem_wait(riders_ended);
-    sem_wait(write_line);
     (*A)++;
     fprintf(pfile,"%d\t\t: RID %d\t\t: finish\n", *A,i);
-    sem_post(write_line);
     exit(0);
 }
 
 void process_bus(int R, int C, int ABT)
 {
-    sem_wait(write_line);
+
     fprintf(pfile, "%d\t\t: BUS\t\t: start\n",*A);
-    sem_post(write_line);
+
 
     while(*MAX_IN_BUS <= R && *ALL_FLAG != 1)
     {
         sem_wait(semaphore1);
 
-        sem_wait(write_line);
+
         (*A)++;
         fprintf(pfile, "%d\t\t: BUS\t\t: arrival\n",*A);
-        sem_post(write_line);
+
 
         if(*CR > 0)
         {
-            sem_wait(write_line);
+
             (*A)++;
             fprintf(pfile, "%d\t\t: BUS\t\t: start boarding: %d\n",*A,(*CR > C ? C : *CR));
-            sem_post(write_line);
+
 
             *HOW_GET_IN = 0;
             sem_post(bus);
             sem_wait(riders_allonaboard);
             *MAX_IN_BUS += *HOW_GET_IN;
 
-            sem_wait(write_line);
+
             (*A)++;
             fprintf(pfile, "%d\t\t: BUS\t\t: end boarding: 0\n",*A);
-            sem_post(write_line);
+
         }
-        sem_wait(write_line);
+
         (*A)++;
         fprintf(pfile, "%d\t\t: BUS\t\t: depart\n",*A);
-        sem_post(write_line);
+
 
         sem_post(semaphore1);
 
         usleep(rand()%(1000*ABT+1));
 
-        sem_wait(write_line);
+
         (*A)++;
         fprintf(pfile, "%d\t\t: BUS\t\t: end\n",*A);
-        sem_post(write_line);
+
 
         for(int i = 0; i < *HOW_GET_IN; i++)
             sem_post(riders_ended);
     }
-    sem_wait(write_line);
+
     (*A)++;
     fprintf(pfile, "%d\t\t: BUS\t\t: finish\n",*A);
-    sem_post(write_line);
+
     exit(0);
 }
 
