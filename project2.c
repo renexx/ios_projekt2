@@ -42,7 +42,7 @@ TShm *shm;
 /*semaphores*/
 sem_t *bus = NULL;
 sem_t *riders_allonaboard = NULL;
-sem_t *riders_ended = NULL;
+sem_t *finish = NULL;
 sem_t *semaphore1 = NULL;
 sem_t *write_line = NULL;
 
@@ -54,14 +54,14 @@ void close_semaphores()
 {
    sem_close(bus);
    sem_close(riders_allonaboard);
-   sem_close(riders_ended);
+   sem_close(finish);
    sem_close(semaphore1);
    sem_close(write_line);
 
    //odalokovanie miesta semaphora
    sem_unlink("/xbolfr00bus");
    sem_unlink("/xbolfr00riders_allonaboard");
-   sem_unlink("/xbolfr00riders_ended");
+   sem_unlink("/xbolfr00finish");
    sem_unlink("/xbolfr00semaphore1");
    sem_unlink("/xbolfr00write_line");
 }
@@ -111,9 +111,9 @@ int load()
         return -1;
     }
 
-    if ((riders_ended = sem_open("/xbolfr00riders_ended", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
+    if ((finish = sem_open("/xbolfr00finish", O_CREAT | O_EXCL, 0666, 0)) == SEM_FAILED)
     {
-        fprintf(stderr, "Cannot load semaphore riders_ended\n");
+        fprintf(stderr, "Cannot load semaphore finish\n");
         clean();
         return -1;
     }
@@ -177,7 +177,7 @@ void process_riders(int C, int i)
         sem_post(riders_allonaboard);
     else
         sem_post(bus);
-    sem_wait(riders_ended);
+    sem_wait(finish);
     sem_wait(write_line);
 
     shm->actionC = shm->actionC + 1;
@@ -238,7 +238,7 @@ void process_bus(int R, int C, int ABT)
         sem_post(write_line);
 
         for(int i = 0; i < shm->how_many; i++)
-            sem_post(riders_ended);
+            sem_post(finish);
     }
     sem_wait(write_line);
     shm->actionC = shm->actionC + 1;
