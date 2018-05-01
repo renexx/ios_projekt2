@@ -1,6 +1,6 @@
 /**
 * @autor: Rene Bolf
-* @date:
+* @date: 1.5.2018
 * @file: project2.c
 * @brief: Implementácia synchronizačného problému The Senate Bus Problem
 * @see: http://www.fit.vutbr.cz/study/courses/IOS/public/Lab/projekty/projekt2/projekt2.pdf
@@ -12,10 +12,8 @@
 #include <string.h>
 #include <errno.h>
 #include <limits.h>
-
 #include <unistd.h>
 #include <sys/wait.h>
-
 #include <sys/types.h>
 #include <semaphore.h>
 #include <fcntl.h>
@@ -24,14 +22,15 @@
 #include <sys/mman.h>
 
 #define SHMAT_ERROR (void*)-1
-#define SLEEP_ART rand()%(1000*ART+1) //uspanie pre parameter ART
-#define SLEEP_ABT rand()%(1000*ABT+1) //uspanie pre parameter ABT
+#define SHMGET_ERROR -1
+#define SLEEP_ART rand()%((ART+1)*1000) //uspanie pre parameter ART
+#define SLEEP_ABT rand()%((ABT+1)*1000) //uspanie pre parameter ABT
 #define LOCKED 0 // semafor zavrety(cervena) = 0
 #define UNLOCKED 1 //semafor otvoreny(zelena) = 1
-/**
- * Struktrua zdielanych premmien
- **/
- enum ERROR
+#define PROCESS_GROUP -1*getpid(),SIGTERM  //kill pre skupinu procesov
+#define PROCESS getpid(),SIGTERM //kill pre proces
+
+enum ERROR
 {
     ERROR_OK, // vracia 0 ked je vsetko spravne
     ERROR_SHM, //error zdielanej premennej
@@ -40,38 +39,39 @@
     ERROR_FILE, //zle nacitany subor
     ERROR_LOAD //zle nacitany load
 };
-
+/**
+ * Struktrua zdielanych premmien
+ **/
  typedef struct
  {
      int actionC; //pocitadlo operacii
      int count_riders; // pocitadlo riderov na zastavke
      int riders_in_bus; //kolko riderov nastupilo do busu
      int all_generated; //vsetci riders boli vygenerovaní
-     int how_many; //
+     int how_many;
      int in_time;
  }TShm;
 TShm *shm;
 #define SHM_SIZE sizeof(TShm)
-/*semaphores*/
+/*semafory*/
 sem_t *bus = NULL;
 sem_t *riders_allonaboard = NULL;
 sem_t *finish = NULL;
 sem_t *semaphore1 = NULL;
-sem_t *write_line = NULL;
+sem_t *write_line = NULL; //semafor na zapisovanie do pamati
 
-FILE *pfile;
+FILE *output_file;
 int shm_id = 0;
-
 
 void close_semaphores()
 {
+    //zatvorenie semaforov
    sem_close(bus);
    sem_close(riders_allonaboard);
    sem_close(finish);
    sem_close(semaphore1);
    sem_close(write_line);
-
-   //odalokovanie miesta semaphora
+   //odalokovanie miesta semaforov
    sem_unlink("/xbolfr00bus");
    sem_unlink("/xbolfr00riders_allonaboard");
    sem_unlink("/xbolfr00finish");
@@ -80,88 +80,77 @@ void close_semaphores()
 }
 void clean()
 {
-
     close_semaphores();
-
+    //detached zdielanych premennych
     shmdt(&shm->actionC);
     shmdt(&shm->count_riders);
     shmdt(&shm->riders_in_bus);
     shmdt(&shm->all_generated);
     shmdt(&shm->how_many);
     shmdt(&shm->in_time);
-
+    //odalokovanie zdielanej premenej
     shmctl(shm_id, IPC_RMID, NULL);
-
 }
-
 int load()
 {
-    if((shm_id = shmget(IPC_PRIVATE, SHM_SIZE, IPC_CREAT | 0666)) == -1)
+    //alokovanie zdielanej premennej
+    if((shm_id = shmget(IPC_PRIVATE, SHM_SIZE, IPC_CREAT | 0666)) == SHMGET_ERROR)
     {
-        fprintf(stderr, "Cannot allocate shm!\n");
+        fprintf(stderr, "Cannot allocate shm_id!\n");
         clean();
         return ERROR_SHM;
     }
     if((shm = shmat(shm_id, NULL ,0)) == SHMAT_ERROR)
     {
-        fprintf(stderr, "Cannot load shm\n");
+        fprintf(stderr, "Cannot allocate shm\n");
         clean();
         return ERROR_SHM;
     }
-
-
+//inicializacia a otvorenie pomenovanych semaforov
     if ((bus = sem_open("/xbolfr00bus", O_CREAT | O_EXCL, 0666, LOCKED)) == SEM_FAILED)
     {
         fprintf(stderr, "Cannot load semaphore bus\n");
         clean();
         return ERROR_SEM;
     }
-
     if ((riders_allonaboard = sem_open("/xbolfr00riders_allonaboard", O_CREAT | O_EXCL, 0666, LOCKED)) == SEM_FAILED)
     {
         fprintf(stderr, "Cannot load semaphore riders_allonaboard\n");
         clean();
         return ERROR_SEM;
     }
-
     if ((finish = sem_open("/xbolfr00finish", O_CREAT | O_EXCL, 0666, LOCKED)) == SEM_FAILED)
     {
         fprintf(stderr, "Cannot load semaphore finish\n");
         clean();
         return ERROR_SEM;
     }
-
     if ((semaphore1 = sem_open("/xbolfr00semaphore1", O_CREAT | O_EXCL, 0666, UNLOCKED)) == SEM_FAILED)
     {
         fprintf(stderr, "Cannot load semaphore1\n");
         clean();
         return ERROR_SEM;
     }
-
     if ((write_line = sem_open("/xbolfr00write_line", O_CREAT | O_EXCL, 0666, UNLOCKED)) == SEM_FAILED)
     {
         fprintf(stderr, "Cannot load semaphore write_line\n");
         clean();
         return ERROR_SEM;
     }
-
+//inicializacia zdielanych premennych
     shm->actionC = 1;
     shm->count_riders = 0;
     shm->riders_in_bus = 0;
     shm->all_generated = 0;
     shm->how_many = 0;
     shm->in_time = 0;
-
-
 return ERROR_OK;
 }
-
 void process_riders(int C, int i)
 {
-
     sem_wait(write_line);
     shm->actionC = shm->actionC + 1;
-    fprintf(pfile, "%d: RID %d: start\n",shm->actionC,i);
+    fprintf(output_file, "%d\t\t: RID %d\t\t: start\n",shm->actionC,i);
     sem_post(write_line);
 
     sem_wait(semaphore1);
@@ -170,7 +159,7 @@ void process_riders(int C, int i)
     shm->actionC = shm->actionC + 1;
     sem_wait(write_line);
     shm->count_riders = shm->count_riders + 1;
-    fprintf(pfile, "%d: RID %d: enter: %d\n",shm->actionC,i,shm->in_time);
+    fprintf(output_file, "%d\t\t: RID %d\t\t: enter: %d\n",shm->actionC,i,shm->in_time);
     sem_post(write_line);
 
     sem_post(semaphore1);
@@ -181,11 +170,11 @@ void process_riders(int C, int i)
     sem_wait(write_line);
 
     shm->actionC = shm->actionC + 1;
-    fprintf(pfile, "%d: RID %d: boarding\n",shm->actionC,i);
+    fprintf(output_file, "%d\t\t: RID %d\t\t: boarding\n",shm->actionC,i);
     sem_post(write_line);
 
     shm->count_riders = shm->count_riders - 1;
-    if(shm->count_riders == 0 || shm->how_many == C)
+    if(shm->how_many == C  || shm->count_riders == 0)
         sem_post(riders_allonaboard);
     else
         sem_post(bus);
@@ -193,36 +182,30 @@ void process_riders(int C, int i)
     sem_wait(write_line);
 
     shm->actionC = shm->actionC + 1;
-    fprintf(pfile,"%d: RID %d: finish\n", shm->actionC,i);
+    fprintf(output_file,"%d\t\t: RID %d\t\t: finish\n", shm->actionC,i);
     sem_post(write_line);
     exit(0);
 }
-
-void process_bus(int R, int C, int ABT)
+void process_bus(int R, int ABT)
 {
     sem_wait(write_line);
-    fprintf(pfile, "%d: BUS: start\n",shm->actionC);
+    fprintf(output_file, "%d\t\t: BUS\t\t: start\n",shm->actionC);
     sem_post(write_line);
-
-    while(shm->how_many <= R && shm->all_generated != 1)
+    while(1)
     {
+    if(shm->all_generated == 1 || R == shm->how_many) break;
         sem_wait(semaphore1);
 
         sem_wait(write_line);
         shm->actionC = shm->actionC + 1;
-        fprintf(pfile, "%d: BUS: arrival\n",shm->actionC);
+        fprintf(output_file, "%d\t\t: BUS\t\t: arrival\n",shm->actionC);
         sem_post(write_line);
 
         if(shm->count_riders > 0)
         {
-            int pom;
-            if(C <= shm->count_riders)
-                pom = C;
-            else
-                pom = shm->count_riders;
             sem_wait(write_line);
             shm->actionC = shm->actionC + 1;
-            fprintf(pfile, "%d: BUS: start boarding: %d\n",shm->actionC,pom);
+            fprintf(output_file, "%d\t\t: BUS\t\t: start boarding: %d\t\n",shm->actionC,shm->count_riders);
             sem_post(write_line);
 
             shm->how_many = 0;
@@ -230,23 +213,22 @@ void process_bus(int R, int C, int ABT)
             sem_wait(riders_allonaboard);
             shm->riders_in_bus += shm->how_many;
 
-             sem_wait(write_line);
+            sem_wait(write_line);
             shm->actionC = shm->actionC + 1;
-            fprintf(pfile, "%d: BUS: end boarding: 0\n",shm->actionC);
-             sem_post(write_line);
+            fprintf(output_file, "%d\t\t: BUS\t\t: end boarding: %d\n",shm->actionC,shm->count_riders);
+            sem_post(write_line);
         }
-         sem_wait(write_line);
+        sem_wait(write_line);
         shm->actionC = shm->actionC + 1;
-        fprintf(pfile, "%d: BUS: depart\n",shm->actionC);
-         sem_post(write_line);
+        fprintf(output_file, "%d\t\t: BUS\t\t: depart\n",shm->actionC);
+        sem_post(write_line);
 
         sem_post(semaphore1);
-
         usleep(SLEEP_ABT);
 
         sem_wait(write_line);
         shm->actionC = shm->actionC + 1;
-        fprintf(pfile, "%d: BUS: end\n",shm->actionC);
+        fprintf(output_file, "%d\t\t: BUS\t\t: end\n",shm->actionC);
         sem_post(write_line);
 
         for(int i = 0; i < shm->how_many; i++)
@@ -254,19 +236,18 @@ void process_bus(int R, int C, int ABT)
     }
     sem_wait(write_line);
     shm->actionC = shm->actionC + 1;
-    fprintf(pfile, "%d: BUS: finish\n",shm->actionC);
+    fprintf(output_file, "%d\t\t: BUS\t\t: finish\n",shm->actionC);
     sem_post(write_line);
     exit(0);
 }
 
 void gen_riders(int R, int C, int ART)
 {
+    srand(time(NULL));
     pid_t R_id[R];
-
     for(int i = 1; i <= R; i++)
     {
         usleep(SLEEP_ART);
-
         R_id[i] = fork();
         if (R_id[i] == 0)
         {
@@ -274,11 +255,10 @@ void gen_riders(int R, int C, int ART)
         }
         else if (R_id[i] < 0)
         {
-            kill(-1*getpid(),SIGTERM);
+            kill(PROCESS_GROUP);
         }
     }
 }
-
 int params(int *R, int *C, int *ART, int *ABT, char **argv)
 {
     *R = atoi(argv[1]);
@@ -289,11 +269,10 @@ int params(int *R, int *C, int *ART, int *ABT, char **argv)
         return ERROR_OK;
     else
     {
-        fprintf(stderr, "Parametre su zadane v zlych intervaloch a niesu cele cisla\n");
+        fprintf(stderr, "Parametre su zadane v zlych intervaloch alebo niesu cele cisla\n");
         return ERROR_BAD_PARAM;
     }
 }
-
 int main (int argc, char *argv[])
 {
     if(argc != 5)
@@ -310,40 +289,34 @@ int main (int argc, char *argv[])
     if (var == ERROR_BAD_PARAM)
         return ERROR_BAD_PARAM;
 
-    pfile = fopen("proj2.out", "w");
-    if(pfile == NULL)
+    output_file = fopen("proj2.out", "w");
+    if(output_file == NULL)
     {
         fprintf(stderr,"Cannot create file.\n");
         return ERROR_FILE;
     }
-    setbuf(pfile,NULL);
+    setbuf(output_file,NULL);
 
     if(load() != ERROR_OK)
     {
-        fclose(pfile);
+        fclose(output_file);
         clean();
         return ERROR_LOAD;
     }
-
     pid_t p_bus = fork();
-
     if (p_bus == 0)
     {
         //child
-        process_bus(R,C,ABT);
+        process_bus(R,ABT);
     }
-    else if (p_bus > 0)//p_bus > 0
+    else if (p_bus > 0)
     {
         //parent
         pid_t riders_generator = fork();
-
         if (riders_generator == 0)
         {
             //child
-            //pid_t waiting;
-
             gen_riders(R,C,ART);
-
             while(wait(NULL) > 0);
             shm->all_generated=1;
             exit(0);
@@ -356,17 +329,17 @@ int main (int argc, char *argv[])
         }
         else
         {
-           kill(getpid(),SIGTERM);
+           kill(PROCESS);
         }
     }
     else
     {
-        fclose(pfile);
+        fclose(output_file);
         clean();
         return EXIT_FAILURE;
     }
 
-    fclose(pfile);
+    fclose(output_file);
     clean();
     return ERROR_OK;
 }
