@@ -193,7 +193,7 @@ void process_bus(int R, int ABT)
     sem_post(write_line);
     while(1)
     {
-    if(shm->all_generated == 1 || R == shm->how_many) break;
+    if(shm->all_generated == 1 || R == shm->riders_in_bus) break;
         sem_wait(semaphore1);
 
         sem_wait(write_line);
@@ -224,8 +224,8 @@ void process_bus(int R, int ABT)
         sem_post(write_line);
 
         sem_post(semaphore1);
-        usleep(SLEEP_ABT);
-
+        if(ABT != 0)
+            usleep(SLEEP_ABT);
         sem_wait(write_line);
         shm->actionC = shm->actionC + 1;
         fprintf(output_file, "%d\t\t: BUS\t\t: end\n",shm->actionC);
@@ -247,7 +247,8 @@ void gen_riders(int R, int C, int ART)
     pid_t R_id[R];
     for(int i = 1; i <= R; i++)
     {
-        usleep(SLEEP_ART);
+        if(ART != 0)
+            usleep(SLEEP_ART);
         R_id[i] = fork();
         if (R_id[i] == 0)
         {
@@ -343,3 +344,4 @@ int main (int argc, char *argv[])
     clean();
     return ERROR_OK;
 }
+/***end of file proj2.c***/
